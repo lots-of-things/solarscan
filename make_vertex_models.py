@@ -13,11 +13,6 @@ import subprocess
 with open('ts_ex.json', 'r') as f:
     base64_image_string = json.load(f)['data']  # Example input size for ResNet
 
-# Open the image file in binary read mode
-# with open('checkout.jpg', "rb") as img_file:
-#     image_data = img_file.read()
-#     base64_image_string = base64.b64encode(image_data).decode('utf-8')
-
 
 image_data = base64.b64decode(base64_image_string)
 img = Image.open(BytesIO(image_data))
@@ -33,6 +28,7 @@ image_tensor = torchvision.transforms.Compose([
 
 # Example pre-trained model (can be replaced with your own)
 models_dir = 'models'
+os.makedirs(f"{models_dir}/vertex_archives", exist_ok=True)
 models_name = [m.split('_')[1][:-4] for m in os.listdir(models_dir) if m.endswith('.pth')]
 for m in models_name:
     pretrained_model = torch.load(os.path.join(models_dir, "model_{}.pth".format(m)), weights_only=False, map_location=torch.device('cpu')) 
