@@ -57,8 +57,9 @@ You should see a number around `~0.99`.  You can put other base64 encoded images
 1. Enable Vertex AI in a GCP project
 2. Upoad `vertex_archives/` to a Cloud Storage bucket. 
 3. Go to [Vertex AI Model Registry](https://console.cloud.google.com/vertex-ai/models) and "Import" each of the models from Cloud Storage ([instructions](https://cloud.google.com/vertex-ai/docs/model-registry/import-model/)).  Note that these are all PyTorch models.
-4. Deploy all the models as per [these instructions](https://cloud.google.com/vertex-ai/docs/general/deployment#google-cloud-console).  I also set up a [shared resource pool](https://cloud.google.com/vertex-ai/docs/predictions/model-co-hosting) so I didn't need a dedicated server for each model.
-load and deploy custom models on Vertex AI. 
+4. Deploy all the models. 
+    - You can do it manually as per [these instructions](https://cloud.google.com/vertex-ai/docs/general/deployment#google-cloud-console).  I also set up a [shared resource pool](https://cloud.google.com/vertex-ai/docs/predictions/model-co-hosting) so I didn't need a dedicated server for each model.  Even still keeping the smallest machine up for a day still costs about $3.
+    - Since Vertex doesn't allow autoscaling to 0 instances, in order to make it easier to kill all the model deployment endpoints, I wrote the scipt in `deploy_models_to_vertex.py` to iterate through the list of models and deploy them. and then tear them down.  It does take a long time to deploy the models so it doesn't really work in a "real-time" sense, but this gives you the option to run it just during demo time and shut it down shortly after.
 
 I found that the online endpoint tested seemed to be broken for PyTorch models, but I was able to test using the aiplatform api like so:
 
