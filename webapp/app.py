@@ -45,7 +45,6 @@ endpoint_ids = {
     "augmix":"7424176289138868224",
     "standard":"1254244799641288704",
     "oracle":"7018852322675523584",
-    
 }
 
 if app.config['ENV'] == 'production':
