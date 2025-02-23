@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Solar Panel Detection</title>
+    <!-- Link to external CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+
+    <!-- Control panel on the left -->
+    <div id="controlPanel">
+        <h3>Solar Panel Detection</h3>
+
+        <!-- Address search input -->
+        <input id="addressSearch" type="text" placeholder="Search for an address...">
+
+        <!-- Search button -->
+        <button id="searchButton" onclick="geocodeAddress()">Search</button>
+
+        <button id="detectButton" onclick="detectPanels()">Detect Panels</button>
+        
+        
+        <div id="spinner" class="spinner" style="display: none;"></div>
+
+        <div id="responseContent", style="display:none;">
+            <h4>Detection Result</h4>
+            <div id="resultContent">
+                <!-- Result content will go here -->
+            </div>
+        
+            <!-- Feedback buttons, hidden initially -->
+            <div class="feedback-container" id="feedbackContainer" style="display:none;">
+                <h4>Were there actually panels present?</h4>
+                <button id="yesButton" class="feedbackButton">👍 Panels Present</button>
+                <button id="noButton" class="feedbackButton">👎 Panels Absent</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Map container on the right -->
+    <div id="map"></div>
+
+    <!-- Link to external JavaScript -->
+    <script>
+        var csrf_token = "{{ csrf_token() }}";  // CSRF token embedded into the page
+        var maps_api_key = "{{ maps_api_key }}"
+        var ipinfo_token = "{{ ipinfo_token }}"
+    </script>
+    <script src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key }}&libraries=places&loading=async" async defer></script>
+    <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+
+</body>
+</html>
