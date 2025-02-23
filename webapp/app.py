@@ -1,7 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 import numpy as np
 import os
-from config import device, models_dir
 from datetime import datetime
 from dotenv import load_dotenv
 import logging
