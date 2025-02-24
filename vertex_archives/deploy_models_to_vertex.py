@@ -59,23 +59,6 @@ def undeploy_and_delete_endpoints(pool_name):
 
     drp.delete()
     
-# Main function to manage the deployment and cleanup
-def manage_endpoints_and_pool(model_names, resource_pool_name):
-    """
-    Manages deployment, turning on and off endpoints for a list of models, and deletes the resource pool.
-    """
-    # Step 1: Deploy the shared resource pool
-    deploy_shared_resource_pool(resource_pool_name)
-    
-    # Step 2: Deploy all models to the shared resource pool
-    deploy_endpoints(model_names, resource_pool_name)
-    
-    # Example of using the endpoints for predictions, etc. (you can add further logic here)
-    
-    # Step 3: Undeploy the models (turn off endpoints)
-    undeploy_and_delete_endpoints(resource_pool_name)
-    print("All endpoints turned off.")
-
 
 model_names = [
     "blurring",
@@ -85,4 +68,10 @@ model_names = [
     "oracle",
 ]
 resource_pool_name = "shared-resource-pool"
-manage_endpoints_and_pool(model_names, resource_pool_name)
+deploy_shared_resource_pool(resource_pool_name)
+    
+# Step 2: Deploy all models to the shared resource pool
+deploy_endpoints(model_names, resource_pool_name)
+
+# Step 3: Undeploy the models (turn off endpoints)
+# undeploy_and_delete_endpoints(resource_pool_name)
