@@ -28,7 +28,8 @@ image_tensor = torchvision.transforms.Compose([
 
 # Example pre-trained model (can be replaced with your own)
 models_dir = 'models'
-os.makedirs(f"{models_dir}/vertex_archives", exist_ok=True)
+vertex_archives_dir = 'vertex_archives'
+os.makedirs(f"{vertex_archives_dir}", exist_ok=True)
 models_name = [m.split('_')[1][:-4] for m in os.listdir(models_dir) if m.endswith('.pth')]
 for m in models_name:
     pretrained_model = torch.load(os.path.join(models_dir, "model_{}.pth".format(m)), weights_only=False, map_location=torch.device('cpu')) 
@@ -39,10 +40,10 @@ for m in models_name:
     traced_model = torch.jit.trace(pretrained_model, image_tensor.unsqueeze(0))
 
     # # Save the traced model
-    traced_model.save(f"{models_dir}/vertex_archives/model_{m}.pt")
+    traced_model.save(f"{vertex_archives_dir}/model_{m}.pt")
     
     # Check that the traced model works just as well
-    traced_model_load = torch.jit.load(f"{models_dir}/vertex_archives/model_{m}.pt")
+    traced_model_load = torch.jit.load(f"{vertex_archives_dir}/model_{m}.pt")
 
     with torch.no_grad():
         traced_model_load.eval()
@@ -50,21 +51,21 @@ for m in models_name:
     print(res)
     
     # generate .mar for Vertex AI
-    os.makedirs(f"{models_dir}/vertex_archives/model_{m}/", exist_ok=True)
+    os.makedirs(f"{vertex_archives_dir}/model_{m}/", exist_ok=True)
     command = [
         "torch-model-archiver", 
         "--model-name", f"model",
         "--version", "1.0",
-        "--serialized-file", f"{models_dir}/vertex_archives/model_{m}.pt",
+        "--serialized-file", f"{vertex_archives_dir}/model_{m}.pt",
         "--handler", f"{models_dir}/model_handler.py",
-        "--export-path", f"{models_dir}/vertex_archives/model_{m}/",
+        "--export-path", f"{vertex_archives_dir}/model_{m}/",
         "--requirements-file", f"{models_dir}/requirements.txt",
         "--force"
     ]
     # Run the command using subprocess
     try:
         subprocess.run(command, check=True)
-        os.remove(f"{models_dir}/vertex_archives/model_{m}.pt")
+        os.remove(f"{vertex_archives_dir}/model_{m}.pt")
         print("Model archived successfully!")
     except subprocess.CalledProcessError as e:
         print(f"Error while running torch-model-archiver: {e}")

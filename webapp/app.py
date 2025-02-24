@@ -9,14 +9,13 @@ from google.cloud import aiplatform, datastore, storage
 from uuid import uuid4
 import base64
 import dash
-from dash import dash_table
-from dash import dcc, html
-import plotly.graph_objs as go
 from dash.dependencies import Input, Output
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, f1_score
-
+from sklearn.model_selection import cross_val_score, KFold
+from sklearn.metrics import accuracy_score, f1_score, balanced_accuracy_score
+import requests
+import threading
+from dashboard import dash_app_layout, generate_dash_outputs
 
 load_dotenv()  # Load environment variables from .env
 
@@ -29,6 +28,7 @@ app.config['VERSION'] = os.getenv('VERSION')
 app.config['ENV'] = os.getenv('ENV')
 app.config['MAPS_API_KEY'] = os.getenv('MAPS_API_KEY')
 app.config['IPINFO_TOKEN'] = os.getenv('IPINFO_TOKEN')
+app.config['BACKEND_TYPE'] = os.getenv('BACKEND_TYPE')
 
 csrf._exempt_views.add('dash.dash.dispatch')
 
@@ -39,25 +39,78 @@ else:
 
 project_id = "739182013691"
 location = "us-central1"
-endpoint_ids = {
-    "blurring":"2109928728841682944",
-    "spectral":"8519676898496741376",
-    "augmix":"7424176289138868224",
-    "standard":"1254244799641288704",
-    "oracle":"7018852322675523584",
-}
+
 
 if app.config['ENV'] == 'production':
-    aiplatform.init(project=project_id, location=location)
-    endpoints = {k: aiplatform.Endpoint(v) for k, v in endpoint_ids.items()}
-
+    model_names = {
+        "blurring",
+        "spectral",
+        "augmix",
+        "standard",
+        "oracle",
+    }
     client = datastore.Client()
     storage_client = storage.Client()
 else:
-    from dev_data import fake_feedback_data, fake_metamodel_data, fake_probabilities_data
+    model_names = {
+        "blurring",
+        "spectral",
+    }
+    import time
+    from dev_data import fake_feedback_data, fake_metamodel_data, fake_history_data
+
+if app.config['BACKEND_TYPE'] == 'vertex':
+    
+    aiplatform.init(project=project_id, location=location)
+    all_endpoints = aiplatform.Endpoint.list()
+
+    # Iterate through the endpoints and their deployed models
+    endpoints = {}
+    for endpoint in all_endpoints:
+        # List deployed models for this endpoint
+        for deployed_model in endpoint.list_models():
+            # Match the model name with the deployed model
+            model_name = aiplatform.Model(deployed_model.model).display_name
+            endpoints[model_name] = endpoint
+
+    
+    def call_backend(base64_image_string):
+        # Format the image data as a list of instances (assuming it's a single image)
+        instances = [{"data": base64_image_string}]
+        
+        probabilities = {}
+        for name, endpoint in endpoints.items():
+            response = endpoint.predict(instances=instances)
+            
+            # Assuming response contains the prediction results in `predictions`
+            probabilities[name] = response.predictions[0]
+        return probabilities
+elif app.config['BACKEND_TYPE'] == 'app':
+    if app.config['ENV'] == 'production':
+        BACKEND_URL = "https://backend-dot-your-project-id.uc.r.appspot.com/predict"
+    else:
+        BACKEND_URL = "http://127.0.0.1:5050/predict"
+    def call_backend(base64_image_string):
+        probabilities = {}
+        for model_name in model_names:
+            request_data = {'model_name': model_name,
+                    'base64_image_string': base64_image_string}
+            response = requests.post(BACKEND_URL, json=request_data)
+            print(response)
+            backend_data = response.json()
+            probabilities[model_name]=backend_data
+        return probabilities
+    
+def warmup_backend():
+    # Send the GET request to the /warmup endpoint
+    requests.get(f'{BACKEND_URL}/warmup')
 
 @app.route('/')
 def index():
+    if app.config['BACKEND_TYPE'] == 'app':
+        thread = threading.Thread(target=warmup_backend)
+        thread.daemon = True  # Make the thread a daemon thread so it exits when the main program exits
+        thread.start()
     return render_template('index.html', maps_api_key=app.config['MAPS_API_KEY'], ipinfo_token=app.config['IPINFO_TOKEN'])
 
 def sigmoid(z):
@@ -74,40 +127,27 @@ def process_image():
         base64_image_string = base64_image_string.split(",")[1]
     
     # Send image data to the Vertex AI endpoint (AI Platform)
-    try:
-        # Format the image data as a list of instances (assuming it's a single image)
-        if app.config['ENV'] == 'production':
-            instances = [{"data": base64_image_string}]
-        
-            # Send prediction request to the AI platform
-            probabilities = {}
-            for name, endpoint in endpoints.items():
-                response = endpoint.predict(instances=instances)
-                
-                # Assuming response contains the prediction results in `predictions`
-                probabilities[name] = response.predictions[0]
-            metamodel_dict = load_optimal_params()
-        else:
-            probabilities = fake_probabilities_data
-            metamodel_dict = fake_metamodel_data
-        
-        metamodel_params = dict(zip(metamodel_dict['features'], metamodel_dict['param_values']))
-        feature_names = list(probabilities.keys())
-        decision_function_sum = metamodel_params['intercept']
-        for key in feature_names:
-            decision_function_sum+=metamodel_params[key]*probabilities[key]
-        metamodel_probability = sigmoid(decision_function_sum)
-        
-        # Adding the predictions to the response
-        request_json['probabilities'] = probabilities
-        request_json['metamodel_probability'] = metamodel_probability
-        # Adding the predictions to the response
-        request_json['probabilities'] = probabilities
-        return jsonify(request_json), 200
+    # Send prediction request to the AI platform
+    probabilities = call_backend(base64_image_string)
     
-    except Exception as e:
-        # Handle errors
-        return jsonify({"error": str(e)}), 500
+    if app.config['ENV'] == 'production':
+        metamodel_dict = load_optimal_params()
+    else:
+        metamodel_dict = fake_metamodel_data
+    
+    metamodel_params = dict(zip(metamodel_dict['features'], metamodel_dict['param_values']))
+    feature_names = list(probabilities.keys())
+    decision_function_sum = metamodel_params['intercept']
+    for key in feature_names:
+        decision_function_sum+=metamodel_params[key]*probabilities[key]
+    metamodel_probability = sigmoid(decision_function_sum)
+    
+    # Adding the predictions to the response
+    request_json['probabilities'] = probabilities
+    request_json['metamodel_probability'] = metamodel_probability
+    # Adding the predictions to the response
+    request_json['probabilities'] = probabilities
+    return jsonify(request_json), 200
 
 
 @app.route('/store-feedback', methods=['POST'])
@@ -203,30 +243,31 @@ def find_optimal_params(results):
     features = np.array([list(result['probabilities'].values()) for result in results])
     labels = np.array([result['feedback'] for result in results])
 
-    # Split the data into training and testing sets
-    X_train, X_test, y_train, y_test = train_test_split(features, labels, test_size=0.2, random_state=42)
-
-    # Initialize and train the logistic regression model
     model = LogisticRegression()
-    model.fit(X_train, y_train)
+    model.fit(features, labels)
 
-    params = model.coef_[0]  # This will be a 1D array of coefficients
+    # Get the coefficients and intercept after fitting the model on the whole dataset
     params = model.coef_[0].tolist()
     params.append(model.intercept_[0])
-    feature_names.append('intercept')
 
+    # Perform cross-validation for accuracy and F1 score
+    cv = KFold(n_splits=5, shuffle=True, random_state=42)
 
-    # Make predictions
-    y_pred = model.predict(X_test)
+    # Get cross-validation scores for accuracy and F1 score
+    accuracy_scores = cross_val_score(model, features, labels, cv=cv, scoring='accuracy')
+    f1_scores = cross_val_score(model, features, labels, cv=cv, scoring='f1')
+    balanced_accuracy_scores = cross_val_score(model, features, labels, cv=cv, scoring='balanced_accuracy')
 
-    # Evaluate the model
-    accuracy = accuracy_score(y_test, y_pred)
-    f1 = f1_score(y_test,y_pred)
+    # Calculate the mean accuracy and mean F1 score across the folds
+    accuracy = np.mean(accuracy_scores)
+    f1 = np.mean(f1_scores)
+    balanced_accuracy = np.mean(balanced_accuracy_scores)
 
     result_data = {'features': feature_names, 
             'param_values': params, 
             'accuracy':accuracy,
             'f1_score':f1,
+            'balanced_accuracy':balanced_accuracy,
             'checkpoint_time':datetime.now().isoformat(),}
     
     if app.config['ENV'] == 'production':
@@ -256,114 +297,7 @@ def load_optimal_params():
 dash_app = dash.Dash(__name__, server=app, url_base_pathname='/dashboard/')
 
 # Dash layout with improved structure
-dash_app.layout = html.Div(
-    style={'fontFamily': 'Arial, sans-serif', 'padding': '30px'},  # Global styling
-    children=[
-        html.Div(
-            children=[
-                html.H1("Model Performance Dashboard", style={'textAlign': 'center', 'color': '#333', 'marginBottom': '30px'}),
-                html.P(
-                    "This dashboard displays the performance of machine learning models based on their True Positive and True Negative rates. "
-                    "The graphs below show how these rates change across different thresholds, helping to evaluate model accuracy at various levels.",
-                    style={'textAlign': 'center', 'fontSize': '16px', 'color': '#666', 'marginBottom': '30px'}
-                ),
-            ]
-        ),
-        
-        html.Div(
-            children=[
-                # Two columns for the charts (using Flexbox for layout)
-                html.Div(
-                    children=[dcc.Graph(id='tp-chart')],
-                    style={'flex': '1', 'padding': '10px', 'border': '2px solid #D0D0D0', 'borderRadius': '10px', 'boxShadow': '0 2px 5px rgba(0, 0, 0, 0.1)'}
-                ),
-                html.Div(
-                    children=[dcc.Graph(id='tn-chart')],
-                    style={'flex': '1', 'padding': '10px', 'border': '2px solid #D0D0D0', 'borderRadius': '10px', 'boxShadow': '0 2px 5px rgba(0, 0, 0, 0.1)'}
-                ),
-            ],
-            style={'display': 'flex', 'justifyContent': 'space-between', 'flexWrap': 'wrap'}
-        ),
-        
-        # Add a table to display logistic regression parameters and accuracy
-        html.Div(
-            children=[
-                # Performance Metrics Table
-                html.Div(
-                    children=[
-                        html.H2("Optimal Model Performance Metrics", style={'textAlign': 'center', 'color': '#333', 'marginTop': '50px'}),
-                        dash_table.DataTable(
-                            id='performance-metrics-table',
-                            columns=[
-                                {'name': 'Metric', 'id': 'metric'},
-                                {'name': 'Value', 'id': 'value'},
-                            ],
-                            style_table={'width': '60%', 'margin': '30px auto'},
-                            style_header={'backgroundColor': '#f4f4f4', 'fontWeight': 'bold'},
-                            style_cell={'padding': '10px', 'textAlign': 'center', 'fontSize': '14px'},
-                            style_data={'backgroundColor': '#f9f9f9'},
-                        ),
-                    ],
-                    style={'flex': '1', 'padding': '10px', 'border': '2px solid #D0D0D0', 'borderRadius': '10px', 'boxShadow': '0 2px 5px rgba(0, 0, 0, 0.1)'}
-                ),
-                # Parameters Table
-                html.Div(
-                    children=[
-                        html.H2("Logistic Regression Parameters", style={'textAlign': 'center', 'color': '#333', 'marginTop': '50px'}),
-                        dash_table.DataTable(
-                            id='params-table',
-                            columns=[
-                                {'name': 'Feature', 'id': 'feature'},
-                                {'name': 'Value', 'id': 'param_value'},
-                            ],
-                            style_table={'width': '60%', 'margin': '30px auto'},
-                            style_header={'backgroundColor': '#f4f4f4', 'fontWeight': 'bold'},
-                            style_cell={'padding': '10px', 'textAlign': 'center', 'fontSize': '14px'},
-                            style_data={'backgroundColor': '#f9f9f9'},
-                        ),
-                    ],
-                    style={'flex': '1', 'padding': '10px', 'border': '2px solid #D0D0D0', 'borderRadius': '10px', 'boxShadow': '0 2px 5px rgba(0, 0, 0, 0.1)'}
-                ),
-            ],
-            style={'display': 'flex', 'justifyContent': 'space-between', 'flexWrap': 'wrap'}
-        ),
-
-        # Button to trigger the rerun of finding optimal parameters
-        html.Div(
-            children=[
-                html.Button(
-                    "Rerun Finding Optimal Params", 
-                    id='rerun-btn', 
-                    n_clicks=0, 
-                    style={'padding': '10px 20px', 'fontSize': '16px', 'backgroundColor': '#4CAF50', 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer'}
-                ),
-            ],
-            style={'textAlign': 'center', 'marginTop': '20px'}
-        ),
-
-        # Toggle button for history graph
-        html.Div(
-            children=[
-                html.Button(
-                    "Toggle Accuracy & F1 Score History", 
-                    id='toggle-history-btn', 
-                    n_clicks=0, 
-                    style={'padding': '10px 20px', 'fontSize': '16px', 'backgroundColor': '#FF9800', 'color': 'white', 'border': 'none', 'borderRadius': '5px', 'cursor': 'pointer'}
-                ),
-            ],
-            style={'textAlign': 'center', 'marginTop': '20px'}
-        ),
-        
-        # History of Accuracy and F1 Score graph (Initially hidden)
-        html.Div(
-            children=[
-                dcc.Graph(id='history-chart'),
-            ],
-            id='history-container',  # Container for history chart
-            style={'display': 'none', 'marginTop': '30px'},  # Hidden initially
-        ),
-    ]
-)
+dash_app.layout = dash_app_layout
 
 # Dash callback to update dashboard
 @dash_app.callback(
@@ -380,6 +314,7 @@ def update_dashboard(n_clicks):
         query = client.query(kind='feedback')
         results = list(query.fetch())  # Fetch all results
     else:
+        time.sleep(2)
         results = fake_feedback_data
 
     thresholds, model_metrics = get_model_metrics(results)
@@ -392,68 +327,14 @@ def update_dashboard(n_clicks):
 
     # Metrics for performance table
     performance_data = [
-        {'metric': 'Checkpoint Time', 'value': model_performance['checkpoint_time']},
-        {'metric': 'Accuracy', 'value': f"{model_performance['accuracy']:0.3f}"},
-        {'metric': 'F1 Score', 'value': f"{model_performance['f1_score']:0.3f}"},
+        {'metric': 'Evaluation Date', 'value': model_performance['checkpoint_time'][:10]},
     ]
+    metrics_to_show = {'Accuracy': 'accuracy', 'Balanced Accuracy': 'balanced_accuracy', 'F1 Score': 'f1_score' }
 
-    # Parameters for parameter table
-    params_data = [{'feature': feature, 'param_value': f"{value:0.3f}"} for feature, value in zip(model_performance['features'], model_performance['param_values'])]
-    
-    # Create figure for True Positive Rate vs Thresholds
-    bold_colors = ['#FF6F61', '#6B5B95', '#88B04B', '#F7B7A3', '#F6D02F']
-    tp_rate_fig = {
-        'data': [
-            go.Scatter(
-                x=thresholds,
-                y=model_metrics[model]["TP_rate"],
-                mode='lines+markers',
-                name=f'{model}',
-                line={'width': 3, 'color': bold_colors[i % len(bold_colors)]},
-                marker={'size': 8, 'color': bold_colors[i % len(bold_colors)]}
-            )
-            for i, model in enumerate(model_metrics)
-        ],
-        'layout': go.Layout(
-            title='True Positive Rate vs Thresholds',
-            title_x=0.5,
-            xaxis={'title': 'Threshold', 'tickangle': 45},
-            yaxis={'title': 'True Positive Rate'},
-            template='plotly_white',
-            plot_bgcolor='#f7f7f7',
-            paper_bgcolor='#FFFFFF',
-            font={'color': '#333'},
-            showlegend=True,
-            margin={'t': 50, 'b': 50, 'l': 50, 'r': 50},
-        )
-    }
+    for metric_name, metric_key in metrics_to_show.items():
+        if metric_key in model_performance:
+            performance_data.append({'metric': metric_name, 'value': f"{model_performance[metric_key]:0.3f}"})
 
-    # Create figure for True Negative Rate vs Thresholds
-    tn_rate_fig = {
-        'data': [
-            go.Scatter(
-                x=thresholds,
-                y=model_metrics[model]["TN_rate"],
-                mode='lines+markers',
-                name=f'{model}',
-                line={'width': 3, 'color': bold_colors[i % len(bold_colors)]},
-                marker={'size': 8, 'color': bold_colors[i % len(bold_colors)]}
-            )
-            for i, model in enumerate(model_metrics)
-        ],
-        'layout': go.Layout(
-            title='True Negative Rate vs Thresholds',
-            title_x=0.5,
-            xaxis={'title': 'Threshold', 'tickangle': 45},
-            yaxis={'title': 'True Negative Rate'},
-            template='plotly_white',
-            plot_bgcolor='#f7f7f7',
-            paper_bgcolor='#FFFFFF',
-            font={'color': '#333'},
-            showlegend=True,
-            margin={'t': 50, 'b': 50, 'l': 50, 'r': 50},
-        )
-    }
 
     if app.config['ENV'] == 'production':
         query = client.query(kind='metamodel')
@@ -464,57 +345,22 @@ def update_dashboard(n_clicks):
         for result in query.fetch():
             # Extract checkpoint_time, accuracy, and f1_score
             checkpoint_time = result.get('checkpoint_time')
-            accuracy = result.get('accuracy')
-            f1_score = result.get('f1_score')
-            
+
             # Append to history data
             if checkpoint_time:
                 history_data.append({
                     'date': checkpoint_time,  # Format as string (YYYY-MM-DD)
-                    'accuracy': accuracy,
-                    'f1_score': f1_score
                 })
+            for _, metric_key in metrics_to_show.items():
+                if metric_key in result:
+                    history_data.append({
+                        metric_key:result[metric_key]
+                    })  
     else:
-        history_data = [
-            {'date':fake_metamodel_data['checkpoint_time'],
-             'accuracy':fake_metamodel_data['accuracy'],
-             'f1_score':fake_metamodel_data['f1_score'],
-             } for i in range(3)]
-    
-    # Make the history fig
-    history_fig = {
-        'data': [
-            go.Scatter(
-                x=[data['date'] for data in history_data],
-                y=[data['accuracy'] for data in history_data],
-                mode='lines+markers',
-                name='Accuracy',
-                line={'color': '#4CAF50'},
-            ),
-            go.Scatter(
-                x=[data['date'] for data in history_data],
-                y=[data['f1_score'] for data in history_data],
-                mode='lines+markers',
-                name='F1 Score',
-                line={'color': '#FF9800'},
-            ),
-        ],
-        'layout': go.Layout(
-            title='Metamodel Accuracy and F1 Score History',
-            title_x=0.5,
-            xaxis={'title': 'Date', 'tickangle': 45},
-            yaxis={'title': 'Score'},
-            template='plotly_white',
-            plot_bgcolor='#f7f7f7',
-            paper_bgcolor='#FFFFFF',
-            font={'color': '#333'},
-            showlegend=True,
-            margin={'t': 50, 'b': 50, 'l': 50, 'r': 50},
-        )
-    }
+        history_data = fake_history_data
 
-    # Return the figures and the table data
-    return tp_rate_fig, tn_rate_fig, performance_data, params_data, history_fig
+    return generate_dash_outputs(thresholds, model_metrics, model_performance, performance_data, history_data, metrics_to_show)
+    
 
 @dash_app.callback(
     Output('history-container', 'style'),
@@ -528,4 +374,4 @@ def toggle_history_graph(n_clicks):
         return {'display': 'none'}
 
 if __name__ == '__main__':
-    app.run(debug=app.config['DEBUG'], host='0.0.0.0', port=5000)
+    app.run(debug=app.config['DEBUG'], port=5000)
