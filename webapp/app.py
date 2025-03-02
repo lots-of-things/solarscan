@@ -95,8 +95,7 @@ elif app.config['BACKEND_TYPE'] == 'app':
         for model_name in model_names:
             request_data = {'model_name': model_name,
                     'base64_image_string': base64_image_string}
-            response = requests.post(f'{BACKEND_URL}/warmup', json=request_data)
-            print(response)
+            response = requests.post(f'{BACKEND_URL}/predict', json=request_data)
             backend_data = response.json()
             probabilities[model_name]=backend_data
         return probabilities

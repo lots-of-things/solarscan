@@ -176,7 +176,7 @@ th, td {
     transform: translateX(-50%); /* Adjust positioning to ensure it's truly centered */
     z-index: 1000;  /* Ensure it appears above other map elements */
     padding: 10px 20px;
-    font-size: 24px;
+    font-size: 20px;
     background-color: #D87F33; /* Button color */
     color: white;
     border: none;
@@ -285,7 +285,7 @@ th, td {
 
     #searchButton {
         width: 25%; /* Button takes 25% of the container */
-        padding:0;
+        padding:10px 5px;
     }
     
     .hideMedium{
