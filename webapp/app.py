@@ -87,15 +87,15 @@ if app.config['BACKEND_TYPE'] == 'vertex':
         return probabilities
 elif app.config['BACKEND_TYPE'] == 'app':
     if app.config['ENV'] == 'production':
-        BACKEND_URL = "https://backend-dot-your-project-id.uc.r.appspot.com/predict"
+        BACKEND_URL = "http://backend-dot-solarscan.appspot.com"
     else:
-        BACKEND_URL = "http://127.0.0.1:5050/predict"
+        BACKEND_URL = "http://127.0.0.1:5050"
     def call_backend(base64_image_string):
         probabilities = {}
         for model_name in model_names:
             request_data = {'model_name': model_name,
                     'base64_image_string': base64_image_string}
-            response = requests.post(BACKEND_URL, json=request_data)
+            response = requests.post(f'{BACKEND_URL}/warmup', json=request_data)
             print(response)
             backend_data = response.json()
             probabilities[model_name]=backend_data
@@ -112,6 +112,7 @@ def index():
         thread.daemon = True  # Make the thread a daemon thread so it exits when the main program exits
         thread.start()
     return render_template('index.html', maps_api_key=app.config['MAPS_API_KEY'], ipinfo_token=app.config['IPINFO_TOKEN'])
+
 
 def sigmoid(z):
     return 1 / (1 + np.exp(-z))
@@ -133,6 +134,11 @@ def process_image():
     if app.config['ENV'] == 'production':
         metamodel_dict = load_optimal_params()
     else:
+        time.sleep(2)
+        # image_data = base64.b64decode(base64_image_string)
+        # file_path = "output_image.jpg"
+        # with open(file_path, "wb") as file:
+        #     file.write(image_data)
         metamodel_dict = fake_metamodel_data
     
     metamodel_params = dict(zip(metamodel_dict['features'], metamodel_dict['param_values']))
@@ -141,6 +147,22 @@ def process_image():
     for key in feature_names:
         decision_function_sum+=metamodel_params[key]*probabilities[key]
     metamodel_probability = sigmoid(decision_function_sum)
+
+    if app.config['ENV'] == 'production':
+        prediction_entity = datastore.Entity(client.key('detection'))  # Create a Datastore entity
+        prediction_entity.update({
+            'timestamp': datetime.now().isoformat(),
+            'north': request_json['north'],
+            'south': request_json['south'],
+            'east': request_json['east'],
+            'west': request_json['west'],
+            'probabilities': probabilities,
+            'metamodel_probability': metamodel_probability
+        })
+        try:
+            client.put(prediction_entity)
+        except:
+            pass
     
     # Adding the predictions to the response
     request_json['probabilities'] = probabilities
@@ -199,20 +221,24 @@ def store_feedback():
 
 def get_model_metrics(results):
     model_metrics = {}
+    feedback_results = []
+    model_probs = {}
 
     thresholds = np.linspace(0, 1, 21)  # Generate thresholds from 0 to 1 in steps of 0.05
     
     for entity in results:
         feedback = entity['feedback']  # Assuming 'feedback' is a property in your Datastore
         probabilities = entity['probabilities']  # Assuming 'probabilities' is a dictionary
-        
+        feedback_results.append(feedback)
         for model, prob in probabilities.items():
             if model not in model_metrics:
+                model_probs[model] = []
                 model_metrics[model] = {'TPs': np.zeros(len(thresholds)),
                                           'TNs': np.zeros(len(thresholds)),
                                           'Ps': np.zeros(len(thresholds)),
                                           'Ns': np.zeros(len(thresholds)),
                                           }
+            model_probs[model].append(prob)
             # Iterate over thresholds to calculate TP, TN rates for each
             for i, threshold in enumerate(thresholds):
                 if feedback == 1 and prob >= threshold:
@@ -235,18 +261,20 @@ def get_model_metrics(results):
         model_metrics[model]["TP_rate"] = metrics["TPs"]/metrics["Ps"]
         model_metrics[model]["TN_rate"] = metrics["TNs"]/metrics["Ns"]
 
-    return thresholds, model_metrics
+    return thresholds, model_metrics, feedback_results, model_probs
 
-def find_optimal_params(results):
+def find_optimal_params(feedback_results, model_probs):
     # Create numpy arrays for features (probabilities) and labels (feedback)
-    feature_names = list(results[0]['probabilities'].keys())
-    features = np.array([list(result['probabilities'].values()) for result in results])
-    labels = np.array([result['feedback'] for result in results])
+    features = np.array([v for _, v in model_probs.items()]).T
+    labels = np.array(feedback_results)
 
     model = LogisticRegression()
     model.fit(features, labels)
 
     # Get the coefficients and intercept after fitting the model on the whole dataset
+    feature_names = list(model_probs.keys())
+    feature_names.append('intercept')
+    
     params = model.coef_[0].tolist()
     params.append(model.intercept_[0])
 
@@ -317,11 +345,11 @@ def update_dashboard(n_clicks):
         time.sleep(2)
         results = fake_feedback_data
 
-    thresholds, model_metrics = get_model_metrics(results)
+    thresholds, model_metrics, feedback_results, model_probs = get_model_metrics(results)
 
     # Get the optimal parameters and accuracy using your get_optimal_params() function
     if n_clicks > 0:
-        model_performance = find_optimal_params(results)  # This returns a dictionary with keys: 'features', 'params', 'accuracy'
+        model_performance = find_optimal_params(feedback_results, model_probs)  # This returns a dictionary with keys: 'features', 'params', 'accuracy'
     else:
         model_performance = load_optimal_params()
 
@@ -348,14 +376,13 @@ def update_dashboard(n_clicks):
 
             # Append to history data
             if checkpoint_time:
-                history_data.append({
+                next_record = {
                     'date': checkpoint_time,  # Format as string (YYYY-MM-DD)
-                })
-            for _, metric_key in metrics_to_show.items():
-                if metric_key in result:
-                    history_data.append({
-                        metric_key:result[metric_key]
-                    })  
+                }
+                for _, metric_key in metrics_to_show.items():
+                    if metric_key in result:
+                        next_record[metric_key] = result[metric_key]
+                history_data.append(next_record) 
     else:
         history_data = fake_history_data
 
