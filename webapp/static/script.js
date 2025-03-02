@@ -3,6 +3,9 @@ let drawingManager;
 let selectedArea;
 let geocoder;
 let spinner = document.getElementById("spinner"); // Assuming you have a spinner element with ID "spinner"
+let gridCellSizeMeters = 20
+let gridDimension = 5
+let radius = gridCellSizeMeters * gridDimension; // Adjust based on your grid size
 // Function to handle the common behavior for both map and selectArea click
 function handleMapClick(event) {
     // Clear previous selection area
@@ -12,7 +15,6 @@ function handleMapClick(event) {
     infoWindow.close()
 
     const clickedLatLng = event.latLng;
-    const radius = 25*5; 
     selectedBounds = calculateBounds(clickedLatLng, radius);
     
     // Create a new rectangle to represent the selection area
@@ -87,6 +89,18 @@ function initMap() {
         controlPanel.style.display = 'none';  // Hide the control panel
     });
 
+    google.maps.event.addListener(map, 'center_changed', function() {
+        if (selectedArea) {
+            // Get the center of the map
+            const centerLatLng = map.getCenter();
+
+            selectedBounds = calculateBounds(centerLatLng, radius);
+
+            // Move the selected area to the new center
+            selectedArea.setBounds(selectedBounds.selectedBounds);
+        }
+    });
+
 }
 
 function calculateBounds(center, sizeInMeters) {
@@ -108,13 +122,12 @@ function calculateBounds(center, sizeInMeters) {
 
     // Correct the bin size for 25 meters in latitude and longitude.
     // Latitude: each degree is roughly 111,000 meters at the equator.
-    const binSizeLat = (2 * sizeInMeters / 5 / earthRadius) * (180 / Math.PI); // 25 meters in latitude
+    const binSizeLat = (2 * sizeInMeters / gridDimension / earthRadius) * (180 / Math.PI); // 25 meters in latitude
     const binnedLat = Math.round((lat + binSizeLat/2) / binSizeLat) * binSizeLat;
 
     // Longitude: The distance between longitude lines changes with latitude, so we adjust based on the cosine of the latitude.
-    const binSizeLng = Math.round(((2 * sizeInMeters / 5 / earthRadius) * (180 / Math.PI) / Math.cos(binnedLat * Math.PI / 180)) * 100000) / 100000;
+    const binSizeLng = Math.round(((2 * sizeInMeters / gridDimension / earthRadius) * (180 / Math.PI) / Math.cos(binnedLat * Math.PI / 180)) * 100000) / 100000;
 
-    console.log(binSizeLat, binSizeLng)
     // Snap the b  ounds to the nearest bin size
     const binnedNorth = Math.round(north / binSizeLat) * binSizeLat;
     const binnedSouth = Math.round(south / binSizeLat) * binSizeLat;
@@ -128,8 +141,8 @@ function calculateBounds(center, sizeInMeters) {
             new google.maps.LatLng(binnedNorth, binnedEast)
         ),
         wideBounds: new google.maps.LatLngBounds(
-            new google.maps.LatLng(binnedSouth - 0.1 * latOffset, binnedWest - 0.1 * lngOffset),
-            new google.maps.LatLng(binnedNorth + 0.1 * latOffset, binnedEast + 0.1 * lngOffset)
+            new google.maps.LatLng(binnedSouth + 0.15 * latOffset, binnedWest + 0.15 * lngOffset),
+            new google.maps.LatLng(binnedNorth - 0.15 * latOffset, binnedEast - 0.15 * lngOffset)
         )
     };
 }
@@ -169,11 +182,7 @@ function sendToServer(bounds) {
             const centerLng = (chunkEast + chunkWest) / 2;
 
             const staticMapUrl = staticMapUrlBase + 
-                '&center=' + centerLat + ',' + centerLng +
-                '&north=' + chunkNorth + 
-                '&south=' + chunkSouth +
-                '&east=' + chunkEast +
-                '&west=' + chunkWest;
+                '&center=' + centerLat + ',' + centerLng 
 
             fetch(staticMapUrl)
                 .then(response => response.blob())
@@ -372,6 +381,7 @@ function geocodeAddress() {
 function sendFeedback(val) {
     if (window.currentRectangle) {
         // Retrieve the metadata from the clicked rectangle
+        document.getElementById("feedbackDiv").style.visibility = 'hidden'
         const rectangleData = window.currentRectangle.metadata;
 
         // Add the feedback value to the rectangle's metadata
@@ -388,7 +398,6 @@ function sendFeedback(val) {
         })
         .then(response => response.json())
         .then(data => {
-            document.getElementById("feedbackDiv").style.visibility = 'hidden'
             console.log('Feedback stored:', data);
         })
         .catch(err => {

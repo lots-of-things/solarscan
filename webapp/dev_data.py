@@ -37,8 +37,8 @@ fake_feedback_data = [
         {'feedback': 1, 'probabilities': {'spectral': 0.79, 'blurring': 0.85}},
         {'feedback': 0, 'probabilities': {'spectral': 0.12, 'blurring': 0.2}},
     ]
-fake_metamodel_data = {'features':['spectral','blurring','intercept'], 
-            'param_values': [0.12345,0.22121,0.2556556], 
+fake_metamodel_data = {'features':['spectral','oracle','augmix','blurring','standard','intercept'], 
+            'param_values': [-0.39,3.132,0.808,0.664,1.664,-2.528], 
             'accuracy':0.123456, 
             'f1_score': 0.65432,
             'checkpoint_time':'2025-02-22',}
