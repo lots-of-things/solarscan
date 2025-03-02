@@ -16,8 +16,12 @@ app = Flask(__name__)
 # Load configuration values
 app.config['VERSION'] = os.getenv('VERSION')
 app.config['ENV'] = os.getenv('ENV')
+if app.config['ENV'] == 'production':
+    app.config['USE_CORS'] = os.getenv('USE_CORS').lower() == 'true'
+    app.config['CORS_URL'] = os.getenv('CORS_URL')
 
-CORS(app, origins=["https://solarscan.appspot.com"])
+    if app.config['USE_CORS']:
+        CORS(app, origins=[app.config['CORS_URL']])
 
 model_names = {
     "blurring",
@@ -41,7 +45,7 @@ if app.config['ENV'] == 'production':
     # Download model files from GCS to /tmp/models/
     models = {}
     for model_name in model_names:
-        model_blob = bucket.blob(f'model_{model_name}.pth')
+        model_blob = bucket.blob(f'models/model_{model_name}.pth')
         model_path = os.path.join(tmp_dir, f'model_{model_name}.pth')
         model_blob.download_to_filename(model_path)
         

@@ -22,10 +22,10 @@ dash_app_layout = html.Div(
                     children=[
                         "The ",
                         html.A("PV panel detection app ", href="/"),
-                        " combines prediction probability estimates from several neural networks (sub-models) into a meta-model for greater robustness. "
+                        " combines prediction probability estimates from several neural networks (sub-models) into a stacked model for greater robustness. "
                         "This dashboard displays the performance of each sub-model (see ",
                         html.A("the original paper", href="https://arxiv.org/abs/2309.12214", target="_blank"),
-                        " for details on each model) on our user generated labeled dataset and how they are combined to produce our meta-model. "
+                        " for details on each model) on our user generated labeled dataset and how they are combined to produce our stacked model. "
                     ],
                     style={'textAlign': 'center', 'fontSize': '16px', 'color': '#666', 'max-width':'1000px',  'margin':'0 auto 30px ', 'padding':'10px'}
                 ),
@@ -37,7 +37,7 @@ dash_app_layout = html.Div(
                 # Two columns for the charts (using Flexbox for layout)
                 html.P(
                     "The graphs below show how True Positive and True Negative rates change as the prediction thresholds varies. "
-                    "Our metamodel is effectively picking a set of thresholds for each model that maximizes both the true positive and true negative rates.",
+                    "Our stacked model is effectively picking a set of thresholds for each model that maximizes both the true positive and true negative rates.",
                     style={'textAlign': 'center', 'fontSize': '16px', 'color': '#666', 'max-width':'1000px',  'margin':'20px auto ', 'padding':'10px'}
                 ),
                 html.Div(
@@ -85,10 +85,10 @@ dash_app_layout = html.Div(
             children=[
                 # Performance Metrics Table
                 html.P(
-                    "For the PV detection model, the above submodels are combined by a logistic regression metamodel fit on the feedback data compiled from user's identifying whether panels were present in each image. "
-                    "We evaluate how well our metamodel is able to accurately predict the feedback results via cross-validation. "
-                    "The first table below displays performance metrics from the latest metamodel evaluation. "
-                    "The second table lists the submodel weights and the intercept of the logistic regression metamodel currently in use on the app.",
+                    "For the PV detection model, the above submodels are combined by a logistic regression stacked model fit on the feedback data compiled from user's identifying whether panels were present in each image. "
+                    "We evaluate how well our stacked model is able to accurately predict the feedback results via cross-validation. "
+                    "The first table below displays performance metrics from the latest stacked model evaluation. "
+                    "The second table lists the submodel weights and the intercept of the logistic regression stacked model currently in use on the app.",
                     style={'textAlign': 'center', 'fontSize': '16px', 'color': '#333', 'marginTop': '10px', 'marginBottom': '10px', 'max-width': '1000px', 'padding':'10px'}
                 ),
                 # Button to trigger the rerun of finding optimal parameters
@@ -276,11 +276,10 @@ def generate_dash_outputs(thresholds, model_metrics, model_performance, performa
             for i, (metric_name, metric_key) in enumerate(metrics_to_show.items())
         ],
         'layout': go.Layout(
-            # title='Metamodel Accuracy and F1 Score History',
             title_x=0.5,
             xaxis={'title': 'Date', 'tickangle': 45},
             yaxis={
-                'title': 'Score',
+                'title': 'Cross-validation Score',
                 'range': [0, 1],  # Set the y-axis range to be between 0 and 1
             },
             template='plotly_white',

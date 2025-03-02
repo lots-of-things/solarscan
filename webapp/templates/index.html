@@ -5,42 +5,48 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Solar Panel Detection</title>
     <!-- Link to external CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
 </head>
 <body>
+    <div id="spinner" class="spinner" style="display: none;"></div>
 
     <!-- Control panel on the left -->
-    <div id="controlPanel">
-        <h3>Solar Panel Detection</h3>
-
-        <!-- Address search input -->
-        <input id="addressSearch" type="text" placeholder="Search for an address...">
-
-        <!-- Search button -->
-        <button id="searchButton" onclick="geocodeAddress()">Search</button>
-
-        <button id="detectButton" onclick="detectPanels()">Detect Panels</button>
+    <div id="logo" class="top-left">
+        SolarScan
         
-        
-        <div id="spinner" class="spinner" style="display: none;"></div>
-
-        <div id="responseContent", style="display:none;">
-            <h4>Detection Result</h4>
-            <div id="resultContent">
-                <!-- Result content will go here -->
-            </div>
-        
-            <!-- Feedback buttons, hidden initially -->
-            <div class="feedback-container" id="feedbackContainer" style="display:none;">
-                <h4>Were there actually panels present?</h4>
-                <button id="yesButton" class="feedbackButton">👍 Panels Present</button>
-                <button id="noButton" class="feedbackButton">👎 Panels Absent</button>
-            </div>
+    </div>
+    
+    <div id="infoButton" onclick="showInfo()">
+        ℹ️
+    </div>
+    <!-- Popup for the control panel -->
+    <div id="controlPanel" class="control-panel">
+        <span id="closeButton" class="close-button">×</span>
+        <div>
+            <h3>Solar Panel Detection with Deep Learning</h3>
+            <p>This app detects solar panels in satellite imagery using machine learning models developed by researchers at <a href="https://github.com/gabrielkasmi/deeppvmapper">Mines Paris</a>.</p>
+            <h4>Instructions:</h4>
+            <ul>
+                <li>Click on the map to select an area.</li>
+                <li>Select "Detect Panels" to run the model and detect solar panels.</li>
+                <li>Grids will appear green if panels are detected and red if not.</li>
+                <li>Click on a grid to see the model confidence and provide feedabck to improve the model.</li>
+                <li>View the <a href="/dashboard">dashboard</a> to see model performance and retrain the model.</li>
+                <li>Read <a href="https://opus.stedden.org/2025/02/solar-pv-map-detection/">this post</a> to learn more about the project.</li>
+            </ul>
         </div>
     </div>
 
     <!-- Map container on the right -->
     <div id="map"></div>
+    <div id="searchContainer">
+        <input id="addressSearch" type="text" placeholder="Search for an address...">
+        <button id="searchButton" onclick="geocodeAddress()"><span>Search</span></button>
+    </div>
+    <button id="detectButton" onclick="detectPanels()" style="display: none;">Detect Panels</button>
+
 
     <!-- Link to external JavaScript -->
     <script>
@@ -49,7 +55,7 @@
         var ipinfo_token = "{{ ipinfo_token }}"
     </script>
     <script src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key }}&libraries=places&loading=async" async defer></script>
-    <script src="{{ url_for('static', filename='scripts.js') }}"></script>
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
 
 </body>
 </html>

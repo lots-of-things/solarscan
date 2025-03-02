@@ -4,7 +4,7 @@ Code for [solarscan.uw.r.appspot.com](https://solarscan.uw.r.appspot.com), a map
 
 ## Usage and Future Directions
 
-The current app is meant to display real-time tuning of a meta-model based on several pretrained CNN models using a validation dataset from Google Maps images.  Users can view the output of the existing meta-model on any location by clicking on the map and selecting "Detect Panels."  Afterwards, they can submit feedback on whether they could observe a panel in the region of interest.  This feedback is stored and from the [/dashboard](https://solarscan.uw.r.appspot.com/dashboard) endpoint you can view each model's True Positive and True Negative performance for a given cutoff value.  The meta-model seeks to find a combination of models that maximizes prediction accuracy.  By clicking "Rerun Finding Optimal Params" the stored validation data is fit and new metamodel parameters are stored for use in the app.  At the bottom the history of metamodel performance at a given point in time is traced.
+The current app is meant to display real-time tuning of a "stacked" model based on several pretrained CNN models using a validation dataset from Google Maps images.  Users can view the output of the existing stacked model on any location by clicking on the map and selecting "Detect Panels."  Afterwards, they can submit feedback on whether they could observe a panel in the region of interest.  This feedback is stored and from the [/dashboard](https://solarscan.uw.r.appspot.com/dashboard) endpoint you can view each model's True Positive and True Negative performance for a given cutoff value.  The stacked model seeks to find a combination of models that maximizes prediction accuracy.  By clicking "Rerun Finding Optimal Params" the stored validation data is fit and new stacked model parameters are stored for use in the app.  At the bottom the history of stacked model performance at a given point in time is traced.
 
 In the future, as more labelled validation data is collected, it should become possible to extract the stored dataset and use it to train new more robust CNN models which can be incorporated into this app.  These models on Vertex AI can be used to then map large areas for solar installations.
 
@@ -40,9 +40,11 @@ There are two separate processes to getting this up and running.
 
 ### 1. Deploy frontend webapp to Google App Engine
 
-Similar to the local test you'll need the Maps API key and ipinfo.io token, but you'll need to add them to the blanks in `webapp/app.yaml` this time. You'll also need to enable the Cloud Datastore API too. If you have the GCP CLI installed you can just run `gcloud app deploy` from within the webapp directory and the whole thing should deploy to your project URL in a few minutes.  See 
+Similar to the local test you'll need the Maps API key and ipinfo.io token, but you'll need to add them to the blanks in `webapp/app.yaml` this time. You'll also need to enable the Cloud Datastore API too. If you have the GCP CLI installed you can just run `gcloud app deploy` from within the webapp directory and the whole thing should* deploy to your project URL in a few minutes.  See [more detailed instructions](https://cloud.google.com/build/docs/deploying-builds/deploy-appengine) on App Engine.  
 
 Also in the `webapp/app.yaml`, you'll need to set `BACKEND_TYPE` to either `vertex` or `app`, depending on which way you host the models below.  By default it'll look on vertex for them.
+
+*Note: I've noticed sometimes it takes a long time to deploy and you get a timeout.  If this happens you can extend the cloud build timeout with `gcloud config set app/cloud_build_timeout 1200` and that should fix it. 
 
 ### 2. Getting `robust_pv_mapping` models hosted on online
 
@@ -114,11 +116,21 @@ If that prints something like `~0.99` then your model is deployed and working co
 
 #### Model Hosting Option B: App Engine Backend
 
-Similar to deploying the frontend webapp, if you have GCP CLI installed.  You can just run 
+In the checked in repo, I have a CORS check running by default which is setup to only take requests from my project URL. For getting started you'll either need to disable CORS in the `backend/backend.yaml` by setting  `USE_CORS: 'False'` or set `CORS_URL: YOUR_APP_URL`.  Similar to deploying the frontend webapp, if you have GCP CLI installed.  You can just run 
 
 ```
 cd models/
 gloud app deploy backend.yaml
 ``` 
 
-This will deploy the backend service at `https://backend.YOURPROJECT_NAME.appsopt.com`.  Keep in mind that if you use this method you'll have to make sure your frontend was deployed with `BACKEND_TYPE: 'app'` in the `webapp/app.yaml` file.
+This will deploy the backend service at `https://backend.YOURPROJECT_NAME.appsopt.com`.  
+
+You can test this service with `curl -X GET http://backend.YOURPROJECT_NAME.appspot.com/warmup`, which will "warmup" the server since it needs to download and load all the models when it turns on.  After that you can test the model with:
+
+```
+curl -X POST http://backend.YOURPROJECT_NAME.appspot.com/predict \     
+    -H "Content-Type: application/json" \
+    -d @gae_ex.json
+```
+
+Finally, if you deploy the frontend with `BACKEND_TYPE: 'app'` in the `webapp/app.yaml` file, you should be able to make contact with that server and get predictions.  
