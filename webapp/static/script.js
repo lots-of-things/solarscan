@@ -33,14 +33,22 @@ function handleMapClick(event) {
 
 // Initialize the map,
 function initMap() { 
-    map = new google.maps.Map(document.getElementById('map'), {
-        zoom: 19,
-        center: { lat: 34.4289741, lng: -118.5975942 },  // Default to San Francisco
-        mapTypeId: 'satellite',
-        tilt: 0, // Set tilt to 0 to prevent orthographic view
-        disableDefaultUI: true,
-        zoomControl: true
-    });
+
+    try {
+        map = new google.maps.Map(document.getElementById('map'), {
+            zoom: 19,
+            center: { lat: 34.4289741, lng: -118.5975942 },  // Default to San Francisco
+            mapTypeId: 'satellite',
+            tilt: 0, // Set tilt to 0 to prevent orthographic view
+            disableDefaultUI: true,
+            zoomControl: true
+        });
+    } catch (error) {
+        console.error("Error initializing the map:", error);
+        setTimeout(initMap, 1000);
+    }
+
+    
 
     // Use ipinfo.io to get user's location based on their IP
     fetch('https://ipinfo.io?token='+ipinfo_token)  // Replace YOUR_TOKEN with your actual token from ipinfo.io

@@ -292,5 +292,10 @@ th, td {
         display: none
     }
 
+    #controlPanel {
+        margin: auto;
+        width:90%;
+    }
+
 }
 
